@@ -1,0 +1,7 @@
+result_id,patient_id,test_name,value,unit,reference_range,observation_date,source
+SYN-L001,SYN-P001,HbA1c,5.4,%,4.0-5.6,2025-04-12,synthetic-laboratory-feed-a
+SYN-L002,SYN-P002,Creatinine,0.9,mg/dL,0.6-1.2,2025-04-14,synthetic-laboratory-feed-a
+SYN-L003,SYN-P003,Sodium,140,mmol/L,135-145,invalid-date,synthetic-laboratory-feed-a
+SYN-L004,SYN-P999,Glucose,95,mg/dL,70-99,2025-04-18,synthetic-laboratory-feed-a
+SYN-L005,SYN-P002,LDL cholesterol,,mg/dL,0-129,2025-04-20,synthetic-laboratory-feed-a
+SYN-L002,SYN-P001,Duplicate ID example,1,unit,0-2,2025-04-21,synthetic-laboratory-feed-test

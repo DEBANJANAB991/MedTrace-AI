@@ -1,0 +1,7 @@
+patient_id,age,sex,allergy_information,created_at,updated_at
+SYN-P001,58,Female,No known allergies,2025-01-10T09:00:00Z,2025-03-01T10:00:00Z
+SYN-P002,42,Male,Penicillin (synthetic example),2025-01-12T11:30:00Z,2025-03-05T14:00:00Z
+SYN-P003,67,Other,Unknown,2025-01-15T08:15:00Z,2025-03-08T16:20:00Z
+SYN-P002,42,Male,Penicillin (synthetic example),2025-01-12T11:30:00Z,2025-03-05T14:00:00Z
+SYN-P004,,Female,No known allergies,2025-02-01T09:00:00Z,2025-03-01T10:00:00Z
+SYN-P005,35,Female,No known allergies,not-a-timestamp,2025-03-01T10:00:00Z

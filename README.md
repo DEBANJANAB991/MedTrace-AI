@@ -6,7 +6,7 @@ MedTrace AI is a hackathon prototype for **Challenge 3 — Exasol: Healthcare AI
 
 Healthcare information is often fragmented across clinical notes, medication records, laboratory results and other systems. MedTrace AI explores how these records can be brought together to surface useful insights while making supporting evidence, uncertainty and data-quality limitations visible.
 
-**This is an experimental prototype. It is not a medical device, diagnostic system or substitute for professional clinical judgement. Use synthetic or appropriately authorised, de-identified data only.**
+**This is an experimental prototype. It is not a medical device, diagnostic system or substitute for professional clinical judgement. Use synthetic healthcare data only.**
 
 ## The problem
 
@@ -74,11 +74,13 @@ The stack is intentionally flexible. Exasol Personal is a potential analytics fo
 ```text
 medtrace-ai/
 ├── data/
-│   └── synthetic/       # Fictional demonstration data only
+│   ├── synthetic/       # Fictional CSV demonstration data only
+│   └── medtrace_synthetic.sqlite3
 ├── docs/                # Architecture and decision notes
 ├── src/
-│   └── medtrace/        # Application source code
-├── tests/               # Unit and scenario tests
+│   └── medtrace/        # Ingestion, validation, models, and SQLite modules
+├── tests/               # Unit and pipeline tests
+├── pyproject.toml       # Python 3.12 package and pytest configuration
 ├── .env.example
 ├── .gitignore
 ├── LICENSE
@@ -89,7 +91,7 @@ medtrace-ai/
 ## Getting started
 
 ### Requirements
-- Python 3.11 or 3.12
+- Python 3.12
 - Git
 - VS Code or another Python IDE
 
@@ -117,13 +119,95 @@ source .venv/bin/activate
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+pip install -e .
 ```
 
 ### 4. Configure environment
 Copy `.env.example` to `.env` and add only credentials required by the components you actually use. Never commit `.env` or API keys.
 
 ### 5. Run
-The application modules are being implemented during the hackathon. Add the runnable command here once the MVP entry point is in place.
+Run the ingestion and validation pipeline from the repository root:
+
+```bash
+python -m medtrace
+```
+
+By default, the command reads `data/synthetic/patients.csv`,
+`data/synthetic/medications.csv`, and
+`data/synthetic/laboratory_results.csv`. It writes the validated snapshot to
+`data/medtrace_synthetic.sqlite3` and prints a JSON validation report. Override
+the paths when needed:
+
+```bash
+python -m medtrace --data-dir data/synthetic --database data/demo.sqlite3
+```
+
+The CSVs intentionally contain missing values, repeated record IDs, invalid
+dates, overlapping medication records with contradictory statuses, and unknown
+patient references. These rows appear in the report and are not inserted into
+SQLite. Valid records are retained, and foreign keys prevent orphan medication
+or laboratory rows. An empty medication `end_date` is accepted only for an
+`active` medication, where it represents an open-ended interval.
+
+Run the tests with:
+
+```bash
+python -m pytest
+```
+
+### Database queries
+
+The tables are `patients`, `medications`, and `laboratory_results`. For example,
+join a laboratory result to its patient while retaining the source and
+observation date:
+
+```sql
+SELECT
+    patient.patient_id,
+    result.result_id,
+    result.test_name,
+    result.value,
+    result.unit,
+    result.observation_date,
+    result.source
+FROM laboratory_results AS result
+JOIN patients AS patient USING (patient_id)
+ORDER BY patient.patient_id, result.observation_date;
+```
+
+To check medication references, join medications to patients:
+
+```sql
+SELECT
+    medication.medication_id,
+    patient.patient_id,
+    medication.medication_name,
+    medication.status,
+    medication.source
+FROM medications AS medication
+JOIN patients AS patient USING (patient_id);
+```
+
+SQLite foreign-key enforcement is enabled on every application connection;
+`PRAGMA foreign_key_check;` can be used to verify the stored database.
+
+### Implementation notes
+
+- `ingestion.py` reads CSVs with pandas and carries the original CSV line number
+  into each in-memory row so validation findings point back to their source.
+- `validation.py` performs deterministic checks before persistence. A
+  medication-status conflict means records for the same patient and medication
+  have different statuses during overlapping date intervals. An active record
+  with no end date has an open-ended interval.
+- `database.py` owns SQLite connections, schema creation, transactions, and
+  parameterized inserts. The patient table is the parent table; medication and
+  laboratory tables reference it with foreign keys.
+- `pipeline.py` connects the stages. Any row with an error is excluded from the
+  database snapshot, while its structured issue remains in the JSON report.
+  The snapshot is replaced as a transaction, and database failures are raised
+  rather than converted into a success-shaped result.
+- `models.py` defines typed issue and pipeline results. No RAG, embeddings,
+  LLM, or user interface is included in this stage.
 
 ## Evaluation plan
 
@@ -162,4 +246,4 @@ Challenge brief: https://hackathon.medical-valley-emn.de/healthcare-ai-you-can-t
 
 ## Disclaimer
 
-This project is an experimental hackathon prototype for educational and demonstration purposes. It does not provide medical advice, diagnosis, triage or treatment recommendations. All outputs require appropriate human review. Use only synthetic or properly authorised data.
+This project is an experimental hackathon prototype for educational and demonstration purposes. It does not provide medical advice, diagnosis, triage or treatment recommendations. All outputs require appropriate human review. Use synthetic healthcare data only.

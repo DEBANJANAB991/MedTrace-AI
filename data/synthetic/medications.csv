@@ -1,0 +1,8 @@
+medication_id,patient_id,medication_name,dosage,status,start_date,end_date,source
+SYN-M001,SYN-P001,Metformin,500 mg,active,2025-06-01,,synthetic-medication-feed-a
+SYN-M002,SYN-P001,Metformin,500 mg,discontinued,2025-06-01,2025-09-01,synthetic-medication-feed-b
+SYN-M003,SYN-P002,Amlodipine,5 mg,active,2025-03-10,,synthetic-medication-feed-a
+SYN-M004,SYN-P999,Levothyroxine,25 mcg,active,2025-04-20,,synthetic-medication-feed-a
+SYN-M005,SYN-P003,Atorvastatin,10 mg,active,not-a-date,,synthetic-medication-feed-a
+SYN-M006,SYN-P003,Vitamin D,,active,2025-02-20,,synthetic-medication-feed-a
+SYN-M003,SYN-P003,Duplicate ID example,1 tablet,active,2025-04-01,,synthetic-medication-feed-test
