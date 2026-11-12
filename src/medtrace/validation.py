@@ -50,6 +50,17 @@ TABLE_CONFIG = {
         ),
         "date_fields": ("observation_date",),
     },
+    "clinical_notes": {
+        "record_id": "note_id",
+        "required_fields": (
+            "note_id",
+            "patient_id",
+            "note_text",
+            "observed_at",
+            "source",
+        ),
+        "date_fields": ("observed_at",),
+    },
 }
 
 
@@ -291,6 +302,7 @@ def validate_datasets(data: HealthcareData) -> ValidationReport:
         "patients": data.patients,
         "medications": data.medications,
         "laboratory_results": data.laboratory_results,
+        "clinical_notes": data.clinical_notes,
     }
 
     for table, data_frame in data_frames.items():
@@ -315,6 +327,9 @@ def validate_datasets(data: HealthcareData) -> ValidationReport:
     )
     _validate_patient_references(
         report, "laboratory_results", data.laboratory_results, patient_ids
+    )
+    _validate_patient_references(
+        report, "clinical_notes", data.clinical_notes, patient_ids
     )
     _validate_medication_status_conflicts(report, data.medications)
     return report

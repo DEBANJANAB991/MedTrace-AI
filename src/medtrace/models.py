@@ -56,3 +56,14 @@ class ValidationReport:
 class PipelineResult:
     validation_report: ValidationReport
     loaded_record_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
+class EvidenceRecord:
+    record_id: str
+    patient_id: str
+    record_type: str
+    content: str
+    source_name: str
+    timestamp: str
+    metadata: dict[str, object] = field(default_factory=dict)

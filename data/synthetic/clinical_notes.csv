@@ -1,0 +1,5 @@
+note_id,patient_id,note_text,observed_at,source
+SYN-N001,SYN-P001,"Synthetic follow-up note: patient reports tracking blood glucose at home; routine monitoring was discussed.",2025-04-15T10:30:00Z,synthetic-clinical-notes-a
+SYN-N002,SYN-P001,"Synthetic visit note: seasonal allergies are recorded.",2025-04-20T14:00:00Z,synthetic-clinical-notes-a
+SYN-N003,SYN-P002,"Synthetic review note: patient reports occasional headache; no additional context is recorded.",2025-04-22T09:15:00Z,synthetic-clinical-notes-a
+SYN-N004,SYN-P003,"Synthetic visit note: patient reports fatigue; no additional context is recorded.",2025-04-25T11:00:00Z,synthetic-clinical-notes-a

@@ -22,6 +22,7 @@ def test_pipeline_persists_only_valid_rows_and_enforces_foreign_keys(
         "patients": 3,
         "medications": 1,
         "laboratory_results": 2,
+        "clinical_notes": 4,
     }
     assert result.validation_report.has_errors
     assert database_path.is_file()
@@ -29,7 +30,12 @@ def test_pipeline_persists_only_valid_rows_and_enforces_foreign_keys(
     with sqlite3.connect(database_path) as connection:
         counts = {
             table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            for table in ("patients", "medications", "laboratory_results")
+            for table in (
+                "patients",
+                "medications",
+                "laboratory_results",
+                "clinical_notes",
+            )
         }
         orphan_count = connection.execute(
             """
@@ -46,11 +52,16 @@ def test_pipeline_persists_only_valid_rows_and_enforces_foreign_keys(
             "SELECT source FROM laboratory_results WHERE result_id = ?",
             ("SYN-L001",),
         ).fetchone()[0]
+        loaded_note = connection.execute(
+            "SELECT source FROM clinical_notes WHERE note_id = ?",
+            ("SYN-N001",),
+        ).fetchone()[0]
 
     assert counts == result.loaded_record_counts
     assert orphan_count == 0
     assert foreign_keys_enabled == []
     assert loaded_source == "synthetic-laboratory-feed-a"
+    assert loaded_note == "synthetic-clinical-notes-a"
 
     with pytest.raises(sqlite3.IntegrityError):
         with SQLiteDatabase(database_path).connection() as connection:

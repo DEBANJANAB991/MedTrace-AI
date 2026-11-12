@@ -15,6 +15,9 @@ dependencies = [
 test = [
     "pytest>=8.0",
 ]
+semantic = [
+    "sentence-transformers>=3.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

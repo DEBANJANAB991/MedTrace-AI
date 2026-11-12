@@ -10,6 +10,7 @@ def make_data(
     patients: list[dict[str, object]] | None = None,
     medications: list[dict[str, object]] | None = None,
     laboratory_results: list[dict[str, object]] | None = None,
+    clinical_notes: list[dict[str, object]] | None = None,
 ) -> HealthcareData:
     if patients is None:
         patients = [
@@ -48,9 +49,19 @@ def make_data(
                 "source": "synthetic-test-feed",
             }
         ]
+    if clinical_notes is None:
+        clinical_notes = [
+            {
+                "note_id": "SYN-N001",
+                "patient_id": "SYN-P001",
+                "note_text": "Synthetic example note.",
+                "observed_at": "2025-01-20T10:00:00Z",
+                "source": "synthetic-test-notes",
+            }
+        ]
 
     frames = []
-    for records in (patients, medications, laboratory_results):
+    for records in (patients, medications, laboratory_results, clinical_notes):
         frame = pd.DataFrame(records)
         frame["_row_number"] = range(2, len(frame) + 2)
         frames.append(frame)

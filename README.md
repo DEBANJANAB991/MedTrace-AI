@@ -62,7 +62,7 @@ flowchart TD
 | Ingestion | CSV / pandas | Additional formats/connectors |
 | Storage | SQLite for local prototype | Exasol Personal / team-selected database |
 | Validation | Python and SQL rules | More comprehensive quality checks |
-| Retrieval | Transparent keyword baseline | Embeddings / vector retrieval |
+| Retrieval | Patient-scoped keyword baseline | Optional embedding-based retrieval |
 | AI | Optional LLM API | Team-selected model and orchestration |
 | Interface | CLI initially | Streamlit or React |
 | Testing | pytest | Scenario-based evaluation |
@@ -74,12 +74,12 @@ The stack is intentionally flexible. Exasol Personal is a potential analytics fo
 ```text
 medtrace-ai/
 ├── data/
-│   ├── synthetic/       # Fictional CSV demonstration data only
+│   ├── synthetic/       # Fictional CSVs, including unstructured notes
 │   └── medtrace_synthetic.sqlite3
 ├── docs/                # Architecture and decision notes
 ├── src/
-│   └── medtrace/        # Ingestion, validation, models, and SQLite modules
-├── tests/               # Unit and pipeline tests
+│   └── medtrace/        # Ingestion, validation, retrieval, generation, and demo
+├── tests/               # Unit, pipeline, and scenario evaluation tests
 ├── pyproject.toml       # Python 3.12 package and pytest configuration
 ├── .env.example
 ├── .gitignore
@@ -123,7 +123,21 @@ pip install -e .
 ```
 
 ### 4. Configure environment
-Copy `.env.example` to `.env` and add only credentials required by the components you actually use. Never commit `.env` or API keys.
+Export the environment variables listed in `.env.example` only for components
+you use. Never commit `.env` files or API keys. Generation defaults to the local
+mock provider; it makes no network requests unless
+`LLM_PROVIDER=openai_compatible` is selected and an API key and model are
+configured.
+
+To opt into local semantic retrieval, install its optional dependency:
+
+```bash
+pip install -e ".[semantic]"
+```
+
+The sentence-transformers model is loaded only when `SentenceTransformerEmbedder`
+is instantiated. The first use may download the selected model; the keyword
+retriever has no model or network dependency.
 
 ### 5. Run
 Run the ingestion and validation pipeline from the repository root:
@@ -134,7 +148,8 @@ python -m medtrace
 
 By default, the command reads `data/synthetic/patients.csv`,
 `data/synthetic/medications.csv`, and
-`data/synthetic/laboratory_results.csv`. It writes the validated snapshot to
+`data/synthetic/laboratory_results.csv`, and
+`data/synthetic/clinical_notes.csv`. It writes the validated snapshot to
 `data/medtrace_synthetic.sqlite3` and prints a JSON validation report. Override
 the paths when needed:
 
@@ -157,9 +172,9 @@ python -m pytest
 
 ### Database queries
 
-The tables are `patients`, `medications`, and `laboratory_results`. For example,
-join a laboratory result to its patient while retaining the source and
-observation date:
+The tables are `patients`, `medications`, `laboratory_results`, and
+`clinical_notes`. For example, join a laboratory result to its patient while
+retaining the source and observation date:
 
 ```sql
 SELECT
@@ -191,6 +206,199 @@ JOIN patients AS patient USING (patient_id);
 SQLite foreign-key enforcement is enabled on every application connection;
 `PRAGMA foreign_key_check;` can be used to verify the stored database.
 
+### Evidence retrieval
+
+The retrieval foundation is in `src/medtrace/retrieval/`. Both retrievers load
+evidence from SQLite with a `WHERE patient_id = ?` filter before ranking, so
+records from other patients are not candidates. Evidence results include the
+record ID, patient ID, type, content, source name, timestamp, and additional
+date metadata. `max_records` limits the result count.
+
+The keyword baseline is available without optional dependencies:
+
+```python
+from pathlib import Path
+
+from medtrace.database import SQLiteDatabase
+from medtrace.retrieval import KeywordRetriever
+
+retriever = KeywordRetriever(
+    SQLiteDatabase(Path("data/medtrace_synthetic.sqlite3")),
+    max_records=5,
+)
+results = retriever.retrieve("SYN-P001", "blood glucose monitoring")
+```
+
+Keyword retrieval tokenizes query and evidence text and ranks records by the
+fraction of distinct query terms found in the record. It is transparent and
+fast, but it does not understand synonyms or equivalent phrasing.
+
+Semantic retrieval is a separate, optional path. It converts the query and each
+patient-scoped record into embedding vectors, then computes cosine similarity:
+the dot product of two vectors divided by the product of their lengths. Similar
+meanings can be close in vector space even when they use different words. The
+returned score is cosine similarity; `min_similarity` can filter weak matches.
+Use `SentenceTransformerEmbedder` with the optional `semantic` extra, or supply
+another `TextEmbedder` implementation. Tests use a small fake embedder, so they
+do not download a model.
+
+These are not SQL analytics queries. SQL filters records by the exact patient
+ID and fetches structured rows; Python ranks fetched content by lexical matches
+or embedding similarity. Neither retrieval strategy generates a summary or
+clinical conclusion.
+
+### Evidence-grounded generation
+
+The generation module accepts a patient ID and natural-language question,
+retrieves evidence with the existing patient-scoped keyword retriever, and
+passes a structured context (record ID, patient ID, type, source, timestamp,
+and content) to an LLM provider. The response includes a cited summary, key
+findings, the retrieved supporting evidence, conflicts, missing information,
+uncertainty, an abstention flag, and `human_review_required=true`.
+
+```python
+from pathlib import Path
+
+from medtrace.database import SQLiteDatabase
+from medtrace.generation import (
+    EvidenceGenerationPipeline,
+    LLMSettings,
+    create_provider,
+)
+from medtrace.retrieval import KeywordRetriever
+
+database = SQLiteDatabase(Path("data/medtrace_synthetic.sqlite3"))
+retriever = KeywordRetriever(database, max_records=5)
+provider = create_provider(LLMSettings.from_environment())
+pipeline = EvidenceGenerationPipeline(retriever, provider)
+result = pipeline.answer(
+    "SYN-P001",
+    "What do the available records mention about glucose tracking?",
+)
+print(result.to_dict())
+```
+
+Configure the opt-in OpenAI-compatible provider with `LLM_PROVIDER`,
+`LLM_API_KEY`, and `LLM_MODEL`; `LLM_BASE_URL` and `LLM_TIMEOUT_SECONDS` can
+also be configured. Credentials are read from the process environment and are
+never included in logs or generated results. The HTTP adapter uses Python's
+standard library. Provider construction and the mock provider make no network
+requests. Tests use mock responses only.
+
+The provider receives instructions to use only retrieved evidence, cite record
+IDs for factual statements, identify gaps and conflicts, abstain if evidence is
+insufficient, and avoid diagnoses, treatment recommendations, and clinical
+decisions. The application validates that cited IDs came from the retrieved
+patient-scoped records and rejects output missing required citations or
+containing explicit diagnosis/action language. When retrieval returns no
+records, the pipeline abstains without invoking a provider. All outputs require
+human review; generation failures are surfaced rather than replaced with
+plausible-looking content.
+
+This is a hackathon prototype: prompts and output checks reduce risk but do not
+establish clinical safety or guarantee that a language model is correct.
+
+### End-to-end demo and deterministic evaluation
+
+Run the complete local demonstration from the repository root:
+
+```bash
+python -m medtrace.demo
+```
+
+The command ingests and validates all files in `data/synthetic/`, writes valid
+records to a temporary SQLite database, and runs five fixed scenarios with
+mock responses: a supported answer, conflicting allergy records, missing
+fatigue-duration information, no relevant records, and a request for another
+patient's information. It prints each structured answer and its deterministic
+evaluation checks as JSON. The temporary database is removed when the command
+finishes; the committed/demo database is not overwritten. The default demo
+makes no network calls and downloads no models.
+
+To try a patient ID and question through the same local pipeline:
+
+```bash
+python -m medtrace.demo --patient-id SYN-P001 --question "Was blood glucose tracking mentioned?"
+```
+
+The custom-question path uses the safe default mock, which abstains rather than
+pretending to answer arbitrary questions. It still displays any patient-scoped
+retrieved evidence and runs the same structural checks.
+
+Example excerpt for the supported scenario:
+
+```json
+{
+  "summary": "The note says blood glucose is tracked at home and routine monitoring was discussed. [SYN-N001]",
+  "summary_source_ids": ["SYN-N001"],
+  "supporting_evidence": [
+    {
+      "record_id": "SYN-N001",
+      "source": "synthetic-clinical-notes-a",
+      "timestamp": "2025-04-15T10:30:00Z"
+    }
+  ],
+  "missing_information": [],
+  "uncertainty": {
+    "text": "The note does not provide additional tracking details. [SYN-N001]",
+    "source_ids": ["SYN-N001"]
+  },
+  "human_review_required": true,
+  "abstained": false,
+  "evaluation": {"passed": true}
+}
+```
+
+The evaluation checks that cited and displayed record IDs exist in the
+retrieved set, retrieved/cited evidence belongs to the requested patient,
+abstention matches the scenario, expected conflicts and missing information
+are reported, and human review is required. These deterministic checks test
+structure, provenance, isolation, and expected demo behavior only. They do not
+prove clinical safety or factual correctness.
+
+### Phase 5: AI Cross-Examiner
+
+`src/medtrace/cross_examiner.py` independently extracts factual-looking
+sentences and clauses from the original summary, findings, conflicts, and
+missing-information statements, then compares them to the retrieved records.
+The original response and its citations are retained. The Cross-Examiner does
+not call an LLM: it uses conservative lexical matching and a narrow explicit
+allergy-polarity rule. It marks each claim `supported`, `contradicted`, or
+`insufficient_evidence`, reports supporting and contradicting record IDs, and
+requires human review. The demo runs it on the conflicting-allergy scenario
+and prints `original_generated_answer` beside `cross_examination`.
+
+Example excerpt:
+
+```json
+{
+  "original_generated_answer": {
+    "summary": "The patient has no known allergies. [SYN-P001]",
+    "summary_source_ids": ["SYN-P001"]
+  },
+  "cross_examination": {
+    "claims": [
+      {
+        "claim_text": "The patient has no known allergies.",
+        "cited_source_ids": ["SYN-P001"],
+        "supporting_source_ids": ["SYN-P001"],
+        "contradicting_source_ids": ["SYN-N002"],
+        "verification_status": "contradicted",
+        "human_review_required": true
+      }
+    ],
+    "human_review_required": true
+  }
+}
+```
+
+This illustrates a record-level disagreement: the patient registry supports
+the generated wording, while a retrieved note records seasonal allergies.
+The verifier does not decide which record is correct. Its lexical rules may
+miss paraphrases, misunderstand negation or context, or produce false matches;
+`supported` is not proof of factual correctness. This synthetic-data research
+prototype has no clinical validation and is not a clinical decision system.
+
 ### Implementation notes
 
 - `ingestion.py` reads CSVs with pandas and carries the original CSV line number
@@ -206,8 +414,16 @@ SQLite foreign-key enforcement is enabled on every application connection;
   database snapshot, while its structured issue remains in the JSON report.
   The snapshot is replaced as a transaction, and database failures are raised
   rather than converted into a success-shaped result.
-- `models.py` defines typed issue and pipeline results. No RAG, embeddings,
-  LLM, or user interface is included in this stage.
+- `models.py` defines typed issue, evidence, and pipeline results. Optional
+  semantic retrieval uses embeddings only to rank evidence; the generation
+  module uses a provider abstraction and does not change retrieval behavior.
+- `demo.py` runs ingestion, validation, patient-scoped retrieval, mock
+  generation, and scenario evaluation without overwriting the repository
+  database. `evaluation.py` checks evidence IDs, patient isolation, abstention,
+  conflict/missing-information expectations, and the human-review flag.
+- `cross_examiner.py` performs deterministic, claim-level evidence comparisons;
+  it retains the original response and only reports sources from the retrieved
+  patient evidence.
 
 ## Evaluation plan
 

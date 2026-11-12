@@ -11,18 +11,21 @@ class HealthcareData:
     patients: pd.DataFrame
     medications: pd.DataFrame
     laboratory_results: pd.DataFrame
+    clinical_notes: pd.DataFrame
 
 
 DATASET_FILES = {
     "patients": "patients.csv",
     "medications": "medications.csv",
     "laboratory_results": "laboratory_results.csv",
+    "clinical_notes": "clinical_notes.csv",
 }
 
 IDENTIFIER_COLUMNS = {
     "patients": {"patient_id": "string"},
     "medications": {"medication_id": "string", "patient_id": "string"},
     "laboratory_results": {"result_id": "string", "patient_id": "string"},
+    "clinical_notes": {"note_id": "string", "patient_id": "string"},
 }
 
 
@@ -46,4 +49,5 @@ def load_csv_datasets(data_directory: Path) -> HealthcareData:
         patients=data_frames["patients"],
         medications=data_frames["medications"],
         laboratory_results=data_frames["laboratory_results"],
+        clinical_notes=data_frames["clinical_notes"],
     )
