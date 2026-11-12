@@ -1,0 +1,1 @@
+"""MedTrace AI hackathon prototype."""
